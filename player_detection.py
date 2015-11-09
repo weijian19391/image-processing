@@ -1,4 +1,5 @@
 import cv2
+import cv2.cv as cv
 import numpy as np
 # np.set_printoptions(threshold='nan')
 # MIN_AREA_OF_CONTOUR_BOX = 200
@@ -10,11 +11,12 @@ class PlayerDectector():
 	THRESHOLD = {"Red":75, "Blue":50, "Green" : 80}
 	MIN_AREA_OF_CONTOUR_BOX = {"Red":200, "Blue":100, "Green":70}
 
-	def __init__(self, backgrd_image):
-		self.backgrd_image = backgrd_image
-		self.backgrd_blue = backgrd_image[:,:,0].astype(float)
-		self.backgrd_green = backgrd_image[:,:,1].astype(float)
-		self.backgrd_red = backgrd_image[:,:,2].astype(float)
+	def __init__(self, video_dir):
+		self.backgrd_image = self.obtainBackgrd(video_dir)
+		# self.backgrd_image = cv2.imread("normImg.jpg")
+		self.backgrd_blue = self.backgrd_image[:,:,0].astype(float)
+		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
+		self.backgrd_red = self.backgrd_image[:,:,2].astype(float)
 		
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
@@ -94,10 +96,10 @@ class PlayerDectector():
 
 		#------------------------------------------------detect Red Players----------------------------------------------------------
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
-		# cv2.imwrite("Images\detect " + "red" + "frame "+ str(j)+ ".png",red_player_detected)
+		# cv2.imwrite("Contours\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
 		contours, hierarchy = cv2.findContours(red_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_red, blue_players_limbs = self.drawPlayerOutline(np.copy(contoured_frame), contours,"Red")
-		cv2.imwrite("Images\Red\Contoured Red Players frame "+ str(j)+ ".png",contoured_frame_red)
+		cv2.imwrite("Contours\Red\Contoured Red Players frame "+ str(j)+ ".jpg",contoured_frame_red)
 
 		#------------------------------------------------detect Blue Players----------------------------------------------------------
 		player_detected = self.detectColour(foregrd_coloured, "Blue", self.THRESHOLD["Blue"])
@@ -105,10 +107,10 @@ class PlayerDectector():
 		full_blue_player = player_detected.astype(int) + blue_players_limbs.astype(int)
 		masked_wanted_points = np.ma.masked_where(full_blue_player!=0, full_blue_player)
 		final_full_blue_player = np.ma.filled(masked_wanted_points,255)
-		# cv2.imwrite("Images\\full blue"+ str(j)+ ".png",final_full_blue_player)
+		# cv2.imwrite("Contours\\full blue"+ str(j)+ ".jpg",final_full_blue_player)
 		contours, hierarchy = cv2.findContours(final_full_blue_player.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_blue,_ = self.drawPlayerOutline(np.copy(contoured_frame), contours, "Blue")
-		cv2.imwrite("Images\Blue\Contoured Blue Players frame "+ str(j)+ ".png",contoured_frame_blue)
+		cv2.imwrite("Contours\Blue\Contoured Blue Players frame "+ str(j)+ ".jpg",contoured_frame_blue)
 
 		#------------------------------------------------detect Green Players----------------------------------------------------------
 		both_teams_detected = (red_player_detected + final_full_blue_player).astype(np.uint8)
@@ -119,16 +121,39 @@ class PlayerDectector():
 		green_channel = self.detectColour(green_players, "Green", self.THRESHOLD["Green"])
 		contours, hierarchy = cv2.findContours(green_channel.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_green,_ = self.drawPlayerOutline(contoured_frame, contours, "Green")
-		cv2.imwrite("Images\Green\Contoured Green Players frame " + str(j)+".png", contoured_frame_green)
+		cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
+
+	def obtainBackgrd(self, video_dir):
+		cap = cv2.VideoCapture(video_dir)
+		width, height, fps, frames_count = cap.get(cv.CV_CAP_PROP_FRAME_WIDTH), cap.get(cv.CV_CAP_PROP_FRAME_HEIGHT),  cap.get(cv.CV_CAP_PROP_FPS), cap.get(cv.CV_CAP_PROP_FRAME_COUNT)
+
+		width = int(width)
+		height = int(height)
+		fps = int(fps)
+		frames_count = int(frames_count)
+
+		_,img = cap.read()
+		avgImg = np.float32(img)
+		normImg = np.float32(img)
+
+		for fr in range(1,frames_count):
+			# print fr
+			_,img = cap.read()
+			Img_ApdatedBG =((fr-1.0)/fr)*avgImg+(1.0/fr)*np.float32(img); #using fixed alpha would mean that when frame count increases, it means that future Contours are weighted too much.
+			avgImg = Img_ApdatedBG;
+			normImg = cv2.convertScaleAbs(avgImg) # convert into uint8 image
+
+		cv2.imwrite('normImg.jpg', normImg)
+		return normImg
 
 
 
 if DEBUG :
 	j=0
-	backgrd = cv2.imread("normImg.png", 1)
-	detPlayer = PlayerDectector(backgrd)
-	capture = cv2.VideoCapture('football_right.mp4')
+	detPlayer = PlayerDectector("football_panorama.MOV")
+	capture = cv2.VideoCapture('football_panorama.MOV')
 	while capture.isOpened():
+		print "processing frame " + str(j)
 		_, frame = capture.read()
 		detPlayer.detectPlayers(frame, j)
 		j +=1
