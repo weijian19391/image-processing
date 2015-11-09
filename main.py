@@ -80,7 +80,7 @@ def generate_panorama(left_view, mid_view, right_view):
         panorama = stitch_image2(stitched_img_mid_and_img_right, img_left, "h1_matrix.txt")
         cropped_panorama = panorama[:1200, 800:10200]
         #resize = cv2.resize(cropped_panorama,(2560,1920))
-        cv2.imwrite('panorama_frame_ ' + str(frame) +'.jpg',cropped_panorama)
+        cv2.imwrite('Panorama\panorama_frame_ ' + str(frame) +'.jpg',cropped_panorama)
         #video_writer.write(cropped_panorama)
 
     video_capture_left.release()
