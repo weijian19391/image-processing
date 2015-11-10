@@ -5,14 +5,15 @@ import numpy as np
 # MIN_AREA_OF_CONTOUR_BOX = 200
 DEBUG = 0
 
+
 class PlayerDectector():
 	CONTOUR_COLOUR = (255,255,255)
 	CONTOUR_BTN_COLOUR = (0,0,255)
-	THRESHOLD = {"Red":75, "Blue":50, "Green" : 80}
-	MIN_AREA_OF_CONTOUR_BOX = {"Red":200, "Blue":100, "Green":70}
+	THRESHOLD = {"Red":30, "Blue":50, "Green" : 80}
+	MIN_AREA_OF_CONTOUR_BOX = {"Red":35, "Blue":35, "Green":40}
 
-	def __init__(self, video_dir):
-		self.backgrd_image = self.obtainBackgrd(video_dir)
+	def __init__(self, backgrd_image):
+		self.backgrd_image = backgrd_image
 		# self.backgrd_image = cv2.imread("normImg.jpg")
 		self.backgrd_blue = self.backgrd_image[:,:,0].astype(float)
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
@@ -29,6 +30,8 @@ class PlayerDectector():
 	def detectColour(self,frame, colour, threshold):
 		numRow, numCol, numRGB = frame.shape
 		colour_To_Be_Search = np.ndarray((numRow,numCol))
+		colour_compare_one = np.ndarray((numRow,numCol))
+		colour_compare_two = np.ndarray((numRow,numCol))
 		image_blue = frame[:,:,0].flatten()
 		image_green = frame[:,:,1].flatten()
 		image_red = frame[:,:,2].flatten()
@@ -36,15 +39,21 @@ class PlayerDectector():
 
 		if colour == "Red" :
 			colour_To_Be_Search = image_red
+			colour_compare_one = image_blue
+			colour_compare_two = image_green
 		elif colour == "Blue":
 			colour_To_Be_Search = image_blue
+			colour_compare_one = image_red
+			colour_compare_two = image_green
 		elif colour == "Green":
 			colour_To_Be_Search = image_green
+			colour_compare_one = image_blue
+			colour_compare_two = image_red
 
 		masked_unmax_pixels = np.ma.masked_where(cmax!=colour_To_Be_Search, colour_To_Be_Search)
-		masked_lowerintensity_pixels = np.ma.masked_where(masked_unmax_pixels<= self.THRESHOLD[colour], masked_unmax_pixels)
-
-		masked_max_intensity_pixels= masked_lowerintensity_pixels/masked_lowerintensity_pixels * 255
+		masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_unmax_pixels)
+		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_unmax_pixels)
+		masked_max_intensity_pixels= masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
 		max_intensity_pixels = np.ma.filled(masked_max_intensity_pixels,0)
 
 		return max_intensity_pixels.reshape(numRow,numCol)
@@ -77,12 +86,20 @@ class PlayerDectector():
 		image_blue = frame[:,:,0].astype(float)
 		image_green = frame[:,:,1].astype(float)
 		image_red = frame[:,:,2].astype(float)
-		diff_red = np.absolute(image_red - backgrd_red)
-		diff_blue = np.absolute(image_blue - backgrd_blue)
-		diff_green = np.absolute(image_green - backgrd_green)
-		
-		backgrd_mask = (1/3.0*diff_red + 1/3.0*diff_blue + 1/3.0*diff_green).astype(np.uint8)
+		diff_red = np.absolute(image_red - backgrd_red)/3
+		diff_blue = np.absolute(image_blue - backgrd_blue)/3
+		diff_green = np.absolute(image_green - backgrd_green)/3
 
+		# trying = np.divide(diff_red,3)
+		# trying2 = trying +trying
+		# print "trying2", trying2
+		# hahaha = 1/3.0*diff_red
+		# hehehe = np.add(hahaha,1/3.0*diff_blue)
+		# print "can print haha",hahaha
+		# # lalla = 1/3.0*diff_blue
+		# # hahaha + lalla
+		backgrd_mask = (diff_red + diff_blue + diff_green).astype(np.uint8)
+		# print "can print",backgrd_mask
 		_,foreground = cv2.threshold(backgrd_mask, 15, 255, cv2.THRESH_BINARY)
 		three_chan_fore = np.dstack((foreground,foreground,foreground))
 		colour_foregrd = cv2.bitwise_and(three_chan_fore, frame)
@@ -93,10 +110,10 @@ class PlayerDectector():
 
 		#------------------------------------------------Do background Subtraction---------------------------------------------------
 		foregrd_coloured = self.backgroundSubtraction(frame, self.backgrd_red, self.backgrd_blue, self.backgrd_green)
-
+		cv2.imwrite("Contours\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
 		#------------------------------------------------detect Red Players----------------------------------------------------------
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
-		# cv2.imwrite("Contours\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
+		cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
 		contours, hierarchy = cv2.findContours(red_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_red, blue_players_limbs = self.drawPlayerOutline(np.copy(contoured_frame), contours,"Red")
 		cv2.imwrite("Contours\Red\Contoured Red Players frame "+ str(j)+ ".jpg",contoured_frame_red)
@@ -107,7 +124,7 @@ class PlayerDectector():
 		full_blue_player = player_detected.astype(int) + blue_players_limbs.astype(int)
 		masked_wanted_points = np.ma.masked_where(full_blue_player!=0, full_blue_player)
 		final_full_blue_player = np.ma.filled(masked_wanted_points,255)
-		# cv2.imwrite("Contours\\full blue"+ str(j)+ ".jpg",final_full_blue_player)
+		cv2.imwrite("Contours\Blue\\full blue"+ str(j)+ ".jpg",final_full_blue_player)
 		contours, hierarchy = cv2.findContours(final_full_blue_player.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_blue,_ = self.drawPlayerOutline(np.copy(contoured_frame), contours, "Blue")
 		cv2.imwrite("Contours\Blue\Contoured Blue Players frame "+ str(j)+ ".jpg",contoured_frame_blue)
@@ -121,7 +138,7 @@ class PlayerDectector():
 		green_channel = self.detectColour(green_players, "Green", self.THRESHOLD["Green"])
 		contours, hierarchy = cv2.findContours(green_channel.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_green,_ = self.drawPlayerOutline(contoured_frame, contours, "Green")
-		cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
+		# cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
 
 	def obtainBackgrd(self, video_dir):
 		cap = cv2.VideoCapture(video_dir)
@@ -136,13 +153,13 @@ class PlayerDectector():
 		avgImg = np.float32(img)
 		normImg = np.float32(img)
 
-		for fr in range(1,frames_count):
+		for fr in range(1,4000):
 			# print fr
 			_,img = cap.read()
 			Img_ApdatedBG =((fr-1.0)/fr)*avgImg+(1.0/fr)*np.float32(img); #using fixed alpha would mean that when frame count increases, it means that future Contours are weighted too much.
 			avgImg = Img_ApdatedBG;
 			normImg = cv2.convertScaleAbs(avgImg) # convert into uint8 image
-
+			print "running average frame " + str(fr)
 		cv2.imwrite('normImg.jpg', normImg)
 		return normImg
 
@@ -157,7 +174,7 @@ if DEBUG :
 		_, frame = capture.read()
 		detPlayer.detectPlayers(frame, j)
 		j +=1
-		if j == 20:
+		if j == 5:
 			exit()
 
 

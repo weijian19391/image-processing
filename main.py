@@ -3,7 +3,8 @@ import cv2
 import cv2.cv as cv
 from player_detection import PlayerDectector
 
-def calculate_size(img1,img2,homography_matrix):
+
+def calculate_size(img1, img2, homography_matrix):
 	height1, width1 = img1[:2]
 	height2, width2 = img2[:2]
 
@@ -44,13 +45,16 @@ def stitch_image2(img1, img2, homography_matrix_file):
 
 	return warped_img2
 
+
 def generate_panorama(left_view, mid_view, right_view):
+	backgrd = cv2.imread("normImgBig.jpg")
+	detPlayer = PlayerDectector(backgrd)
 	video_capture_left = cv2.VideoCapture(left_view)
 	video_capture_mid = cv2.VideoCapture(mid_view)
 	video_capture_right = cv2.VideoCapture(right_view)
 
 	fps = video_capture_left.get(cv.CV_CAP_PROP_FPS)
-	frame_count = video_capture_left.get(cv.CV_CAP_PROP_FRAME_COUNT)
+	frame_count = int(video_capture_left.get(cv.CV_CAP_PROP_FRAME_COUNT))
 	fourcc = video_capture_left.get(cv.CV_CAP_PROP_FOURCC)
 	print fps
 	print fourcc
@@ -72,17 +76,19 @@ def generate_panorama(left_view, mid_view, right_view):
 	video_writer = cv2.VideoWriter('football_panorama.mov', fourcc, fps, video_output_size)
 	#for frame in range(np.int32(frame_count)):
 
-	for frame in range(frame_count):
-		print "Progress... %0.2f%%, current frame is %d" % (np.around((frame/frame_count*100),decimals=2),frame)
+	for frame in range(10):
+		print "Progress... %0.2f%%, current frame is %d" % (np.around((frame/float(frame_count) * 100), decimals=2), frame)
 		_, img_left = video_capture_left.read()
 		_, img_mid = video_capture_mid.read()
 		_, img_right = video_capture_right.read()
 		stitched_img_mid_and_img_right = stitch_image1(img_mid, img_right, "h2_matrix.txt")
 		panorama = stitch_image2(stitched_img_mid_and_img_right, img_left, "h1_matrix.txt")
 		cropped_panorama = panorama[:1200, 800:10200]
-		resize = cv2.resize(cropped_panorama,video_output_size,interpolation=cv2.INTER_AREA)
+		detPlayer.detectPlayers(cropped_panorama,frame)
+		resize = cv2.resize(cropped_panorama, video_output_size, interpolation=cv2.INTER_AREA)
 		# cv2.imwrite('Panorama\panorama_frame_ ' + str(frame) +'.jpg',resize)
 		video_writer.write(resize)
+
 
 
 	video_capture_left.release()
@@ -92,19 +98,12 @@ def generate_panorama(left_view, mid_view, right_view):
 
 	print "video output completed"
 
+
 def main():
 	video_left_name = 'football_left.mp4'
 	video_mid_name = 'football_mid.mp4'
 	video_right_name = 'football_right.mp4'
 
 	generate_panorama('football_left.mp4', 'football_mid.mp4', 'football_right.mp4')
-	detPlayer = PlayerDectector("football_panorama.MOV")
-	video_pano = cv2.VideoCapture("football_panorama.MOV")
-	frame_count = int(video_pano.get(cv.CV_CAP_PROP_FRAME_COUNT))
-	for i in range(frame_count):
-		# cv2.imwrite('Panorama\panorama_frame_ ' + str(frame) +'.png',panorama_pics[frame])
-		_, frame = video_pano.read()
-		detPlayer.detectPlayers(frame, i)
-	video_pano.release()
 if __name__ == "__main__":
 	main()
