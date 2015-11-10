@@ -47,8 +47,9 @@ def stitch_image2(img1, img2, homography_matrix_file):
 
 
 def generate_panorama(left_view, mid_view, right_view):
-	backgrd = cv2.imread("normImgBig.jpg")
+	backgrd = cv2.imread("backgrd.png")
 	detPlayer = PlayerDectector(backgrd)
+
 	video_capture_left = cv2.VideoCapture(left_view)
 	video_capture_mid = cv2.VideoCapture(mid_view)
 	video_capture_right = cv2.VideoCapture(right_view)
@@ -85,9 +86,9 @@ def generate_panorama(left_view, mid_view, right_view):
 		panorama = stitch_image2(stitched_img_mid_and_img_right, img_left, "h1_matrix.txt")
 		cropped_panorama = panorama[:1200, 800:10200]
 		detPlayer.detectPlayers(cropped_panorama,frame)
-		resize = cv2.resize(cropped_panorama, video_output_size, interpolation=cv2.INTER_AREA)
-		# cv2.imwrite('Panorama\panorama_frame_ ' + str(frame) +'.jpg',resize)
-		video_writer.write(resize)
+		# resize = cv2.resize(cropped_panorama, video_output_size, interpolation=cv2.INTER_AREA)
+		cv2.imwrite('C:\Users\weijian\Desktop\FullSize\panorama_frame_ ' + str(frame) +'.jpg',cropped_panorama)
+		# video_writer.write(resize)
 
 
 

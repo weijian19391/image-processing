@@ -3,23 +3,27 @@ import cv2.cv as cv
 import numpy as np
 # np.set_printoptions(threshold='nan')
 # MIN_AREA_OF_CONTOUR_BOX = 200
-DEBUG = 0
+DEBUG = 1
 
 
 class PlayerDectector():
 	CONTOUR_COLOUR = (255,255,255)
 	CONTOUR_BTN_COLOUR = (0,0,255)
 	THRESHOLD = {"Red":50 , "Blue":50, "Green" : 80}
-	MIN_AREA_OF_CONTOUR_BOX = {"Red":100, "Blue":35, "Green":40}
-	GAMMA = 3
+	MIN_DIFF = {"Red":15 , "Blue":0, "Green" : 0}
+	MIN_AREA_OF_CONTOUR_BOX = {"Red":200, "Blue":35, "Green":40}
+	# GAMMA = 1
+	BACKGRD_THRESHOLD = 20
 
 	def __init__(self, backgrd_image):
-		self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
+		# self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
+		self.backgrd_image = backgrd_image
 		# self.backgrd_image = cv2.imread("normImg.jpg")
+		# self.backgrd_image = cv2.medianBlur(backgrd_image,9)
 		self.backgrd_blue = self.backgrd_image[:,:,0].astype(float)
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
 		self.backgrd_red = self.backgrd_image[:,:,2].astype(float)
-		
+		self.mean_kernel = np.ones((5,5),np.float32)/25
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
 	 color detection is based on the threshold, and whether the color channel is the max among the rest of the channel so as to detect more color gradient
@@ -31,8 +35,6 @@ class PlayerDectector():
 	def detectColour(self,frame, colour, threshold):
 		numRow, numCol, numRGB = frame.shape
 		colour_To_Be_Search = np.ndarray((numRow,numCol))
-		# colour_compare_one = np.ndarray((numRow,numCol))
-		# colour_compare_two = np.ndarray((numRow,numCol))
 		image_blue = frame[:,:,0].flatten()
 		image_green = frame[:,:,1].flatten()
 		image_red = frame[:,:,2].flatten()
@@ -40,23 +42,28 @@ class PlayerDectector():
 
 		if colour == "Red" :
 			colour_To_Be_Search = image_red
-			# colour_compare_one = image_blue
-			# colour_compare_two = image_green
+			colour_compare_one = image_blue
+			colour_compare_two = image_green
 		elif colour == "Blue":
 			colour_To_Be_Search = image_blue
-			# colour_compare_one = image_red
-			# colour_compare_two = image_green
+			colour_compare_one = image_red
+			colour_compare_two = image_green
 		elif colour == "Green":
 			colour_To_Be_Search = image_green
-			# colour_compare_one = image_blue
-			# colour_compare_two = image_red
+			colour_compare_one = image_blue
+			colour_compare_two = image_red
 
 		masked_unmax_pixels = np.ma.masked_where(cmax!=colour_To_Be_Search, colour_To_Be_Search)
-		# masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_unmax_pixels)
-		# masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_unmax_pixels)
-		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels<self.THRESHOLD[colour], masked_unmax_pixels)
-		masked_max_intensity_pixels= masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
-		max_intensity_pixels = np.ma.filled(masked_max_intensity_pixels,0)
+		masked_threshold = np.ma.masked_where( masked_unmax_pixels<self.THRESHOLD[colour], masked_unmax_pixels)
+		masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_threshold)
+		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_threshold)
+		masked_max_intensity_pixels_one = masked_lowerintensity_pixels_one/masked_lowerintensity_pixels_one * 255
+		masked_max_intensity_pixels_two = masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
+		
+		max_intensity_pixels_one = np.ma.filled(masked_max_intensity_pixels_one,0)
+		max_intensity_pixels_two = np.ma.filled(masked_max_intensity_pixels_two,0)
+		max_intensity_pixels = cv2.bitwise_and(max_intensity_pixels_one, max_intensity_pixels_two)
+
 
 		return max_intensity_pixels.reshape(numRow,numCol)
 	
@@ -84,10 +91,10 @@ class PlayerDectector():
 	 		backgrd_red, backgrd_blue, backgrd_green : the 3 channels of the precomputed background image			
 	 @returns: the foreground with RGB channels
 	"""
-	def backgroundSubtraction(self,frame, backgrd_red, backgrd_blue, backgrd_green):
-		image_blue = frame[:,:,0].astype(float)
-		image_green = frame[:,:,1].astype(float)
-		image_red = frame[:,:,2].astype(float)
+	def backgroundSubtraction(self,frame, backgrd_red, backgrd_blue, backgrd_green, j):
+		image_blue = frame[:,:,0].astype(np.float32)
+		image_green = frame[:,:,1].astype(np.float32)
+		image_red = frame[:,:,2].astype(np.float32)
 		diff_red = np.absolute(image_red - backgrd_red)/3.0
 		diff_blue = np.absolute(image_blue - backgrd_blue)/3.0
 		diff_green = np.absolute(image_green - backgrd_green)/3.0
@@ -103,18 +110,26 @@ class PlayerDectector():
 		diff_red = diff_red + diff_blue
 		backgrd_mask = (diff_red + diff_green).astype(np.uint8)
 		# print "can print",backgrd_mask
-		_,foreground = cv2.threshold(backgrd_mask, 30, 255, cv2.THRESH_BINARY)
-		cv2.imwrite("backgrd mask.jpg", foreground)
-		three_chan_fore = np.dstack((foreground,foreground,foreground))
+		_,foreground = cv2.threshold(backgrd_mask, self.BACKGRD_THRESHOLD, 255, cv2.THRESH_BINARY) # to get a rough binary image of the foreground
+		cv2.imwrite("Contours\\backgrdmask\\backgrd mask " + str(j) + ".jpg", foreground)
+		# cv2.imwrite("Contours\\backgrdmask\\backgrd mask filtered " + str(j) + ".jpg", cv2.medianBlur(foreground,5))
+		blur_image = cv2.GaussianBlur(foreground,(5,5),0) #to smoothen the noise of the foreground
+		_,new_foreground = cv2.threshold(blur_image, self.BACKGRD_THRESHOLD, 255, cv2.THRESH_BINARY) # to connect more points of the player
+		remove_ring = cv2.medianBlur(new_foreground, 7) # remove the middle ring of the field
+		cv2.imwrite("Contours\\backgrdmask\\backgrd mask filtered " + str(j) + ".jpg",remove_ring)
+		three_chan_fore = np.dstack((remove_ring,remove_ring,remove_ring))
 		colour_foregrd = cv2.bitwise_and(three_chan_fore, frame)
 		return colour_foregrd
 
 	def detectPlayers(self, frame, j):
 		contoured_frame = np.copy(frame)
+		# frame = self.adjustGamma(frame, self.GAMMA)
+		# frame = cv2.filter2D(frame, -1, self.mean_kernel)
+		# frame = cv2.medianBlur(frame,3)
 
 		#------------------------------------------------Do background Subtraction---------------------------------------------------
-		foregrd_coloured = self.backgroundSubtraction(frame, self.backgrd_red, self.backgrd_blue, self.backgrd_green)
-		cv2.imwrite("Contours\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
+		foregrd_coloured = self.backgroundSubtraction(frame, self.backgrd_red, self.backgrd_blue, self.backgrd_green, j)
+		cv2.imwrite("Contours\\removebgrd\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
 		#------------------------------------------------detect Red Players----------------------------------------------------------
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
 		cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
@@ -124,7 +139,7 @@ class PlayerDectector():
 
 		#------------------------------------------------detect Blue Players----------------------------------------------------------
 		player_detected = self.detectColour(foregrd_coloured, "Blue", self.THRESHOLD["Blue"])
-
+		cv2.imwrite("Contours\Blue\player dected" + str(j) + ".jpg", player_detected)
 		full_blue_player = player_detected.astype(int) + blue_players_limbs.astype(int)
 		masked_wanted_points = np.ma.masked_where(full_blue_player!=0, full_blue_player)
 		final_full_blue_player = np.ma.filled(masked_wanted_points,255)
@@ -144,52 +159,45 @@ class PlayerDectector():
 		contoured_frame_green,_ = self.drawPlayerOutline(contoured_frame, contours, "Green")
 		# cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
 
-	def obtainBackgrd(self, video_dir):
-		cap = cv2.VideoCapture(video_dir)
-		width, height, fps, frames_count = cap.get(cv.CV_CAP_PROP_FRAME_WIDTH), cap.get(cv.CV_CAP_PROP_FRAME_HEIGHT),  cap.get(cv.CV_CAP_PROP_FPS), cap.get(cv.CV_CAP_PROP_FRAME_COUNT)
+	# def obtainBackgrd(self, video_dir):
+	# 	cap = cv2.VideoCapture(video_dir)
+	# 	width, height, fps, frames_count = cap.get(cv.CV_CAP_PROP_FRAME_WIDTH), cap.get(cv.CV_CAP_PROP_FRAME_HEIGHT),  cap.get(cv.CV_CAP_PROP_FPS), cap.get(cv.CV_CAP_PROP_FRAME_COUNT)
 
-		width = int(width)
-		height = int(height)
-		fps = int(fps)
-		frames_count = int(frames_count)
+	# 	width = int(width)
+	# 	height = int(height)
+	# 	fps = int(fps)
+	# 	frames_count = int(frames_count)
 
-		_,img = cap.read()
-		avgImg = np.float32(img)
-		normImg = np.float32(img)
+	# 	_,img = cap.read()
+	# 	avgImg = np.float32(img)
+	# 	normImg = np.float32(img)
 
-		for fr in range(1,4000):
-			# print fr
-			_,img = cap.read()
-			Img_ApdatedBG =((fr-1.0)/fr)*avgImg+(1.0/fr)*np.float32(img); #using fixed alpha would mean that when frame count increases, it means that future Contours are weighted too much.
-			avgImg = Img_ApdatedBG;
-			normImg = cv2.convertScaleAbs(avgImg) # convert into uint8 image
-			print "running average frame " + str(fr)
-		cv2.imwrite('normImg.jpg', normImg)
-		return normImg
+	# 	for fr in range(1,4000):
+	# 		# print fr
+	# 		_,img = cap.read()
+	# 		Img_ApdatedBG =((fr/fr+1.0)*avgImg)+(1.0/fr+1)*np.float32(img) #using fixed alpha would mean that when frame count increases, it means that future Contours are weighted too much.
+	# 		avgImg = Img_ApdatedBG
+	# 		normImg = cv2.convertScaleAbs(avgImg) # convert into uint8 image
+	# 		print "running average frame " + str(fr)
+	# 	cv2.imwrite('normImg.jpg', normImg)
+	# 	return normImg
 
-	def adjustGamma(self, image, gamma=1.0):
-		# build a lookup table mapping the pixel values [0, 255] to
-		# their adjusted gamma values
-		invGamma = 1.0 / gamma
-		table = np.array([((i / 255.0) ** invGamma) * 255
-			for i in np.arange(0, 256)]).astype("uint8")
+	# def adjustGamma(self, image, gamma=1.0):
+	# 	# build a lookup table mapping the pixel values [0, 255] to
+	# 	# their adjusted gamma values
+	# 	invGamma = 1.0 / gamma
+	# 	table = np.array([((i / 255.0) ** invGamma) * 255
+	# 		for i in np.arange(0, 256)]).astype("uint8")
 	 
-		# apply gamma correction using the lookup table
-		return cv2.LUT(image, table)
-
+	# 	# apply gamma correction using the lookup table
+	# 	return cv2.LUT(image, table)
+# DEBUG = 0
 if DEBUG :
-	j=0
-	detPlayer = PlayerDectector("football_panorama.MOV")
-	capture = cv2.VideoCapture('football_panorama.MOV')
-	while capture.isOpened():
-		print "processing frame " + str(j)
-		_, frame = capture.read()
-		detPlayer.detectPlayers(frame, j)
-		j +=1
-		if j == 5:
-			exit()
-
-
+	detect_player = PlayerDectector(cv2.imread("backgrd.png"))
+	for j in range(0, 10):
+		print "running frame " + str(j)
+		frame = cv2.imread("C:\Users\weijian\Desktop\FullSize\panorama_frame_ " + str(j) +".jpg")
+		detect_player.detectPlayers(frame, j)
 
 
 
