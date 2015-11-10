@@ -9,11 +9,12 @@ DEBUG = 0
 class PlayerDectector():
 	CONTOUR_COLOUR = (255,255,255)
 	CONTOUR_BTN_COLOUR = (0,0,255)
-	THRESHOLD = {"Red":30, "Blue":50, "Green" : 80}
-	MIN_AREA_OF_CONTOUR_BOX = {"Red":35, "Blue":35, "Green":40}
+	THRESHOLD = {"Red":50 , "Blue":50, "Green" : 80}
+	MIN_AREA_OF_CONTOUR_BOX = {"Red":100, "Blue":35, "Green":40}
+	GAMMA = 3
 
 	def __init__(self, backgrd_image):
-		self.backgrd_image = backgrd_image
+		self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
 		# self.backgrd_image = cv2.imread("normImg.jpg")
 		self.backgrd_blue = self.backgrd_image[:,:,0].astype(float)
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
@@ -30,8 +31,8 @@ class PlayerDectector():
 	def detectColour(self,frame, colour, threshold):
 		numRow, numCol, numRGB = frame.shape
 		colour_To_Be_Search = np.ndarray((numRow,numCol))
-		colour_compare_one = np.ndarray((numRow,numCol))
-		colour_compare_two = np.ndarray((numRow,numCol))
+		# colour_compare_one = np.ndarray((numRow,numCol))
+		# colour_compare_two = np.ndarray((numRow,numCol))
 		image_blue = frame[:,:,0].flatten()
 		image_green = frame[:,:,1].flatten()
 		image_red = frame[:,:,2].flatten()
@@ -39,20 +40,21 @@ class PlayerDectector():
 
 		if colour == "Red" :
 			colour_To_Be_Search = image_red
-			colour_compare_one = image_blue
-			colour_compare_two = image_green
+			# colour_compare_one = image_blue
+			# colour_compare_two = image_green
 		elif colour == "Blue":
 			colour_To_Be_Search = image_blue
-			colour_compare_one = image_red
-			colour_compare_two = image_green
+			# colour_compare_one = image_red
+			# colour_compare_two = image_green
 		elif colour == "Green":
 			colour_To_Be_Search = image_green
-			colour_compare_one = image_blue
-			colour_compare_two = image_red
+			# colour_compare_one = image_blue
+			# colour_compare_two = image_red
 
 		masked_unmax_pixels = np.ma.masked_where(cmax!=colour_To_Be_Search, colour_To_Be_Search)
-		masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_unmax_pixels)
-		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_unmax_pixels)
+		# masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_unmax_pixels)
+		# masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_unmax_pixels)
+		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels<self.THRESHOLD[colour], masked_unmax_pixels)
 		masked_max_intensity_pixels= masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
 		max_intensity_pixels = np.ma.filled(masked_max_intensity_pixels,0)
 
@@ -86,9 +88,9 @@ class PlayerDectector():
 		image_blue = frame[:,:,0].astype(float)
 		image_green = frame[:,:,1].astype(float)
 		image_red = frame[:,:,2].astype(float)
-		diff_red = np.absolute(image_red - backgrd_red)/3
-		diff_blue = np.absolute(image_blue - backgrd_blue)/3
-		diff_green = np.absolute(image_green - backgrd_green)/3
+		diff_red = np.absolute(image_red - backgrd_red)/3.0
+		diff_blue = np.absolute(image_blue - backgrd_blue)/3.0
+		diff_green = np.absolute(image_green - backgrd_green)/3.0
 
 		# trying = np.divide(diff_red,3)
 		# trying2 = trying +trying
@@ -98,9 +100,11 @@ class PlayerDectector():
 		# print "can print haha",hahaha
 		# # lalla = 1/3.0*diff_blue
 		# # hahaha + lalla
-		backgrd_mask = (diff_red + diff_blue + diff_green).astype(np.uint8)
+		diff_red = diff_red + diff_blue
+		backgrd_mask = (diff_red + diff_green).astype(np.uint8)
 		# print "can print",backgrd_mask
-		_,foreground = cv2.threshold(backgrd_mask, 15, 255, cv2.THRESH_BINARY)
+		_,foreground = cv2.threshold(backgrd_mask, 30, 255, cv2.THRESH_BINARY)
+		cv2.imwrite("backgrd mask.jpg", foreground)
 		three_chan_fore = np.dstack((foreground,foreground,foreground))
 		colour_foregrd = cv2.bitwise_and(three_chan_fore, frame)
 		return colour_foregrd
@@ -163,7 +167,15 @@ class PlayerDectector():
 		cv2.imwrite('normImg.jpg', normImg)
 		return normImg
 
-
+	def adjustGamma(self, image, gamma=1.0):
+		# build a lookup table mapping the pixel values [0, 255] to
+		# their adjusted gamma values
+		invGamma = 1.0 / gamma
+		table = np.array([((i / 255.0) ** invGamma) * 255
+			for i in np.arange(0, 256)]).astype("uint8")
+	 
+		# apply gamma correction using the lookup table
+		return cv2.LUT(image, table)
 
 if DEBUG :
 	j=0
