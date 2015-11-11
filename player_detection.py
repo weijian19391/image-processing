@@ -18,6 +18,7 @@ class PlayerDectector():
 	BACKGRD_THRESHOLD = 20
 	BLUE_THRESHOLD = 20
 	WHITE_OFFSET = 25 #to offset the y coordinate of the white goal keeper
+	MAX_PIXEL_MOVED = 30
 	def __init__(self, backgrd_image):
 		# self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
 		self.backgrd_image = backgrd_image
@@ -27,10 +28,12 @@ class PlayerDectector():
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
 		self.backgrd_red = self.backgrd_image[:,:,2].astype(float)
 		self.mean_kernel = np.ones((5,5),np.float32)/25
-		self.red_position = {"1":(373,4682), "2": (271,4822), "3":(309,5085), "4":(377,5166), "5":(578,5244), "6":(316,5337), "7":(275,5415), "8":(490,6028)}
+		self.red_position = [(373,4682), (271,4822), (309,5085), (377,5166), (578,5244), (316,5337), (275,5415), (490,6028)]
 		self.red_goalie_position = (377,3660)
-		self.blue_position = {"1":(385,4748), "2": (460,5127), "3":(287,5243), "4":(346,5357), "5":(322,5430), "6":(344,5478), "7":(291,5489), "8":(347,5637), "9":(369,5750), "10":(459,6011)}
+		self.red_nearby = [-1, -1, -1, -1, -1, -1, -1, -1, -1]
+		self.blue_position = [(385,4748),  (460,5127), (287,5243), (346,5357), (322,5430), (344,5478), (291,5489), (347,5637), (369,5750), (459,6011)]
 		self.blue_golie_postion = (362,6526)
+		self.blue_nearby = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 		self.referee_position = (340,5231)
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
@@ -169,6 +172,7 @@ class PlayerDectector():
 		contours, hierarchy = cv2.findContours(white_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_white,_,white_coordinates = self.drawPlayerOutline(np.copy(contoured_frame), contours,"White")
 		cv2.imwrite("Contours\White\Contoured White Players frame "+ str(j)+ ".jpg",contoured_frame_white)
+
 		min_coor = self.red_goalie_position
 		min_dist = 100000000000000
 		for coordinate in white_coordinates:
@@ -178,7 +182,7 @@ class PlayerDectector():
 			# print "my red is at ",
 			# print self.red_goalie_position
 			# print "dist is " + str(dist)
-			if dist < min_dist :
+			if dist < min_dist and dist < self.MAX_PIXEL_MOVED:
 				min_dist = dist
 				min_coor = coordinate
 		self.red_goalie_position = (min_coor[0] + self.WHITE_OFFSET, min_coor[1])
@@ -190,8 +194,38 @@ class PlayerDectector():
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
 		cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
 		contours, hierarchy = cv2.findContours(red_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-		contoured_frame_red, blue_players_limbs, red_coordinate = self.drawPlayerOutline(np.copy(contoured_frame), contours,"Red")
+		contoured_frame_red, blue_players_limbs, red_coordinates = self.drawPlayerOutline(np.copy(contoured_frame), contours,"Red")
 		cv2.imwrite("Contours\Red\Contoured Red Players frame "+ str(j)+ ".jpg",contoured_frame_red)
+		new_red_position = []
+		for position in self.red_position:
+			min_dist = 1000000000
+			min_pos = position
+			# print "checking ", position
+			for coordinate in red_coordinates:
+				# print "coordinate found ", coordinate ,
+				dist = self.distance(position, coordinate)
+				# print "Distance is ", dist 
+				if dist < min_dist and dist < self.MAX_PIXEL_MOVED:
+					# print "Went into the if"
+					min_dist = dist
+					min_pos = coordinate
+			if min_dist == 1000000000:
+				new_red_position.append((-1,-1)) ##not found
+				#do checking for overlap or missing contour feature
+				#do a function that returns either the old coordinate or an estimated overlapped coordinate from the contour
+				#@ para: current point, contours, 
+				#	first we check if the current point is near to any point, 
+				# 		if he is, then we look through the contour to find his best friend's btn corne, 
+				#			find the 3 other points, check which one is the nearest to him, return that
+				#	else we say his contour feature disappear, we let the old one take over 
+			else :
+				red_coordinates.remove(min_pos)
+				new_red_position.append(min_pos)
+		self.red_position = new_red_position
+		# calculate the nearby array here----------------------------------------------------------------------------------
+		# print self.red_position
+		icon_frame_2 = self.drawPlayersPosition(icon_frame, self.red_position, "Blue")
+		cv2.imwrite("PlayerPosition\Red\Red Players frame "+ str(j)+ ".jpg",icon_frame_2)
 
 		#------------------------------------------------detect Blue Players----------------------------------------------------------
 		player_detected = self.detectColour(foregrd_coloured, "Blue", self.THRESHOLD["Blue"])
