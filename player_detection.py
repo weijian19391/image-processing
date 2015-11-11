@@ -9,11 +9,12 @@ DEBUG = 1
 class PlayerDectector():
 	CONTOUR_COLOUR = (255,255,255)
 	CONTOUR_BTN_COLOUR = (0,0,255)
-	THRESHOLD = {"Red":50 , "Blue":50, "Green" : 80}
-	MIN_DIFF = {"Red":15 , "Blue":0, "Green" : 0}
-	MIN_AREA_OF_CONTOUR_BOX = {"Red":200, "Blue":35, "Green":40}
+	THRESHOLD = {"Red":50 , "Blue":50, "Green" : 80, "White" : 120, "Black":50}
+	MIN_DIFF = {"Red":15 , "Blue":0, "Green" : 20}
+	MIN_AREA_OF_CONTOUR_BOX = {"Red":200, "Blue":180, "Green":40, "White":200}
 	# GAMMA = 1
 	BACKGRD_THRESHOLD = 20
+	BLUE_THRESHOLD = 20
 
 	def __init__(self, backgrd_image):
 		# self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
@@ -24,6 +25,9 @@ class PlayerDectector():
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
 		self.backgrd_red = self.backgrd_image[:,:,2].astype(float)
 		self.mean_kernel = np.ones((5,5),np.float32)/25
+		self.red_position = {"1":(373,4682), "2": (271,4822), "3":(309,5085), "4":(377,5166), "5":(578,5244), "6":(316,5337), "7":(275,5415), "8":(490,6028), "9":(377,3660)}
+		self.blue_position = {"1":(385,4748), "2": (460,5127), "3":(287,5243), "4":(346,5357), "5":(322,5430), "6":(344,5478), "7":(291,5489), "8":(347,5637), "9":(369,5750), "10":(459,6011), "11":(362,6526)}
+		self.referee_position = (340,5231)
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
 	 color detection is based on the threshold, and whether the color channel is the max among the rest of the channel so as to detect more color gradient
@@ -40,32 +44,52 @@ class PlayerDectector():
 		image_red = frame[:,:,2].flatten()
 		cmax = np.maximum(np.maximum(image_blue,image_green), image_red)
 
-		if colour == "Red" :
-			colour_To_Be_Search = image_red
-			colour_compare_one = image_blue
-			colour_compare_two = image_green
-		elif colour == "Blue":
-			colour_To_Be_Search = image_blue
-			colour_compare_one = image_red
-			colour_compare_two = image_green
-		elif colour == "Green":
-			colour_To_Be_Search = image_green
-			colour_compare_one = image_blue
-			colour_compare_two = image_red
+		if colour == "White" :
+			masked_blue = np.ma.masked_where(frame[:,:,0]<self.THRESHOLD[colour], colour_To_Be_Search)
+			masked_red = np.ma.masked_where(frame[:,:,1]<self.THRESHOLD[colour], masked_blue)
+			masked_all_color = np.ma.masked_where(frame[:,:,2]<self.THRESHOLD[colour], masked_red)
+			intensified_white_player = masked_all_color + 255
+			complete_intensified_white_player = np.ma.filled(intensified_white_player,0)
+			smooth_image = self.connectDots(complete_intensified_white_player)
+			#check black pants 
+			# cv2.imwrite("frame"+ ".jpg", frame)
+			# print colour_To_Be_Search
+			# bmasked_blue = np.ma.masked_where(frame[:,:,0]>self.THRESHOLD["Black"], colour_To_Be_Search)
+			# bmasked_red = np.ma.masked_where(frame[:,:,1]>self.THRESHOLD["Black"], bmasked_blue)
+			# bmasked_all_color = np.ma.masked_where(frame[:,:,2]>self.THRESHOLD["Black"], bmasked_red)
+			# bintensified_white_player = bmasked_all_color + 250
+			# bcomplete_intensified_white_player = np.ma.filled(bintensified_white_player,0)
+			# cv2.imwrite("Contours\White\white players "+ ".jpg", self.connectDots(complete_intensified_white_player))
+			return smooth_image
+			
+		else :	
+			if colour == "Red" :
+				colour_To_Be_Search = image_red
+				colour_compare_one = image_blue
+				colour_compare_two = image_green
+			elif colour == "Blue":
+				colour_To_Be_Search = image_blue
+				colour_compare_one = image_red
+				colour_compare_two = image_green
+			elif colour == "Green":
+				colour_To_Be_Search = image_green
+				colour_compare_one = image_blue
+				colour_compare_two = image_red
 
-		masked_unmax_pixels = np.ma.masked_where(cmax!=colour_To_Be_Search, colour_To_Be_Search)
-		masked_threshold = np.ma.masked_where( masked_unmax_pixels<self.THRESHOLD[colour], masked_unmax_pixels)
-		masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<15), masked_threshold)
-		masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<15, masked_threshold)
-		masked_max_intensity_pixels_one = masked_lowerintensity_pixels_one/masked_lowerintensity_pixels_one * 255
-		masked_max_intensity_pixels_two = masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
-		
-		max_intensity_pixels_one = np.ma.filled(masked_max_intensity_pixels_one,0)
-		max_intensity_pixels_two = np.ma.filled(masked_max_intensity_pixels_two,0)
-		max_intensity_pixels = cv2.bitwise_and(max_intensity_pixels_one, max_intensity_pixels_two)
+			masked_unmax_pixels = np.ma.masked_where(cmax!=colour_To_Be_Search, colour_To_Be_Search)
+			masked_threshold = np.ma.masked_where( masked_unmax_pixels<self.THRESHOLD[colour], masked_unmax_pixels)
+			masked_lowerintensity_pixels_one = np.ma.masked_where((masked_unmax_pixels-colour_compare_one<self.MIN_DIFF[colour]), masked_threshold)
+			masked_lowerintensity_pixels_two = np.ma.masked_where( masked_unmax_pixels-colour_compare_two<self.MIN_DIFF[colour], masked_threshold)
+			masked_max_intensity_pixels_one = masked_lowerintensity_pixels_one/masked_lowerintensity_pixels_one * 255
+			masked_max_intensity_pixels_two = masked_lowerintensity_pixels_two/masked_lowerintensity_pixels_two * 255
+			
+			max_intensity_pixels_one = np.ma.filled(masked_max_intensity_pixels_one,0)
+			max_intensity_pixels_two = np.ma.filled(masked_max_intensity_pixels_two,0)
+			max_intensity_pixels = cv2.bitwise_and(max_intensity_pixels_one, max_intensity_pixels_two)
 
 
-		return max_intensity_pixels.reshape(numRow,numCol)
+
+			return max_intensity_pixels.reshape(numRow,numCol)
 	
 	"""
 	#This function takes in a list of contours and draw the minAreaBox of them onto the frame
@@ -99,14 +123,6 @@ class PlayerDectector():
 		diff_blue = np.absolute(image_blue - backgrd_blue)/3.0
 		diff_green = np.absolute(image_green - backgrd_green)/3.0
 
-		# trying = np.divide(diff_red,3)
-		# trying2 = trying +trying
-		# print "trying2", trying2
-		# hahaha = 1/3.0*diff_red
-		# hehehe = np.add(hahaha,1/3.0*diff_blue)
-		# print "can print haha",hahaha
-		# # lalla = 1/3.0*diff_blue
-		# # hahaha + lalla
 		diff_red = diff_red + diff_blue
 		backgrd_mask = (diff_red + diff_green).astype(np.uint8)
 		# print "can print",backgrd_mask
@@ -130,6 +146,14 @@ class PlayerDectector():
 		#------------------------------------------------Do background Subtraction---------------------------------------------------
 		foregrd_coloured = self.backgroundSubtraction(frame, self.backgrd_red, self.backgrd_blue, self.backgrd_green, j)
 		cv2.imwrite("Contours\\removebgrd\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
+
+		#------------------------------------------------detect White Players---------------------------------------------------------- 
+		white_player_detected = self.detectColour(foregrd_coloured, "White", self.THRESHOLD["White"])
+		cv2.imwrite("Contours\White\detect " + "White" + "frame "+ str(j)+ ".jpg",white_player_detected)
+		contours, hierarchy = cv2.findContours(white_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+		contoured_frame_white,_ = self.drawPlayerOutline(np.copy(contoured_frame), contours,"White")
+		cv2.imwrite("Contours\White\Contoured White Players frame "+ str(j)+ ".jpg",contoured_frame_white)
+
 		#------------------------------------------------detect Red Players----------------------------------------------------------
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
 		cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
@@ -142,14 +166,21 @@ class PlayerDectector():
 		cv2.imwrite("Contours\Blue\player dected" + str(j) + ".jpg", player_detected)
 		full_blue_player = player_detected.astype(int) + blue_players_limbs.astype(int)
 		masked_wanted_points = np.ma.masked_where(full_blue_player!=0, full_blue_player)
-		final_full_blue_player = np.ma.filled(masked_wanted_points,255)
-		cv2.imwrite("Contours\Blue\\full blue"+ str(j)+ ".jpg",final_full_blue_player)
-		contours, hierarchy = cv2.findContours(final_full_blue_player.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+		noisy_full_blue_player = np.ma.filled(masked_wanted_points,255)
+		cv2.imwrite("Contours\Blue\\full blue"+ str(j)+ ".jpg",noisy_full_blue_player)
+		#connect the white dots of the player
+		gaus_blue_player = cv2.GaussianBlur(noisy_full_blue_player.astype(np.uint8), (5,5), 0)
+		_,final_full_blue_player = cv2.threshold(gaus_blue_player, 20, 255, cv2.THRESH_BINARY) # to connect more points of the player
+		median_blue_player = cv2.medianBlur(final_full_blue_player, 7) 
+		cv2.imwrite("Contours\Blue\\full blue with connectivity"+ str(j)+ ".jpg",median_blue_player)
+		
+
+		contours, hierarchy = cv2.findContours(median_blue_player.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_blue,_ = self.drawPlayerOutline(np.copy(contoured_frame), contours, "Blue")
 		cv2.imwrite("Contours\Blue\Contoured Blue Players frame "+ str(j)+ ".jpg",contoured_frame_blue)
 
 		#------------------------------------------------detect Green Players----------------------------------------------------------
-		both_teams_detected = (red_player_detected + final_full_blue_player).astype(np.uint8)
+		both_teams_detected = (red_player_detected + median_blue_player).astype(np.uint8)
 
 		inverse_both_teams_detected = (both_teams_detected*-1 + 255).astype(np.uint8) #cos -1 makes it int16
 		three_chan_inver = np.dstack((inverse_both_teams_detected,inverse_both_teams_detected,inverse_both_teams_detected))
@@ -157,7 +188,13 @@ class PlayerDectector():
 		green_channel = self.detectColour(green_players, "Green", self.THRESHOLD["Green"])
 		contours, hierarchy = cv2.findContours(green_channel.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_green,_ = self.drawPlayerOutline(contoured_frame, contours, "Green")
-		# cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
+		cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
+
+	def connectDots(self, frame):
+		gaus_blur = cv2.GaussianBlur(frame.astype(np.uint8), (5,5), 0)
+		_,thresholding = cv2.threshold(gaus_blur, 20, 255, cv2.THRESH_BINARY) # to connect more points of the player
+		final_frame = cv2.medianBlur(thresholding, 7) 
+		return final_frame
 
 	# def obtainBackgrd(self, video_dir):
 	# 	cap = cv2.VideoCapture(video_dir)
@@ -194,11 +231,11 @@ class PlayerDectector():
 # DEBUG = 0
 if DEBUG :
 	detect_player = PlayerDectector(cv2.imread("backgrd.png"))
-	for j in range(0, 10):
+	for j in range(0, 7000):
 		print "running frame " + str(j)
 		frame = cv2.imread("C:\Users\weijian\Desktop\FullSize\panorama_frame_ " + str(j) +".jpg")
 		detect_player.detectPlayers(frame, j)
-
+	print "hahaha"
 
 
 
