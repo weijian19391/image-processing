@@ -19,6 +19,8 @@ class PlayerDectector():
 	BLUE_THRESHOLD = 20
 	WHITE_OFFSET = 25 #to offset the y coordinate of the white goal keeper
 	MAX_PIXEL_MOVED = 30
+	CLOSENESS_VALUE = 60
+	BIG_NUMBER = 100000000
 	def __init__(self, backgrd_image):
 		# self.backgrd_image = self.adjustGamma(backgrd_image, self.GAMMA)
 		self.backgrd_image = backgrd_image
@@ -28,13 +30,35 @@ class PlayerDectector():
 		self.backgrd_green = self.backgrd_image[:,:,1].astype(float)
 		self.backgrd_red = self.backgrd_image[:,:,2].astype(float)
 		self.mean_kernel = np.ones((5,5),np.float32)/25
-		self.red_position = [(373,4682), (271,4822), (309,5085), (377,5166), (578,5244), (316,5337), (275,5415), (490,6028)]
+		# self.red_position = [(373,4682), (271,4822), (309,5085), (377,5166), (578,5244), (316,5337), (275,5415), (490,6028)]#position for frame 0
+		# self.red_position = [(373,4682), (271,4822), (309,5085), (377,5166), (346,5357), (316,5337), (275,5415), (490,6028)]#test overlap
+		self.red_position = [(381,4693),(276,4790), (327,5096), (408,5325), (603,5314), (319,5408), (281,5427), (556,6939)] #position for frame 74
 		self.red_goalie_position = (377,3660)
-		self.red_nearby = [-1, -1, -1, -1, -1, -1, -1, -1, -1]
+		# self.red_nearby = self.nearbyPlayer(self.red_position)
 		self.blue_position = [(385,4748),  (460,5127), (287,5243), (346,5357), (322,5430), (344,5478), (291,5489), (347,5637), (369,5750), (459,6011)]
 		self.blue_golie_postion = (362,6526)
-		self.blue_nearby = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+		# self.blue_nearby = self.nearbyPlayer(self.blue_position)
 		self.referee_position = (340,5231)
+
+	# def nearbyPlayer(self, player_position):
+	# 	close_array = []
+	# 	for i in range(len(player_position)):
+	# 		close_array.append(-1)	
+	# 	for j in range(len(player_position)):
+	# 		min_dist = self.BIG_NUMBER
+	# 		min_index = -1
+	# 		for k in range(len(player_position)):
+	# 			dist = self.distance(player_position[j], player_position[k])
+	# 			if dist < min_dist and dist!=0:
+	# 				min_dist = dist
+	# 				min_index = k
+	# 		if min_dist < self.CLOSENESS_VALUE : #assign the closer player index to the player in question
+	# 			close_array[j] = min_index
+	# 	# print close_array
+	# 	if(sum(close_array) != len(player_position)*-1):
+	# 		print close_array
+	# 	return close_array
+
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
 	 color detection is based on the threshold, and whether the color channel is the max among the rest of the channel so as to detect more color gradient
@@ -100,6 +124,7 @@ class PlayerDectector():
 	
 	"""
 	#This function takes in a list of contours and draw the minAreaBox of them onto the frame
+	TODO: remove the last return parameter cos not used anymore------------------------------------------------------------------------------------------------------------------
 	"""
 	def drawPlayerOutline(self,frame,contours,colour):
 		filled_contours=np.ndarray((frame.shape[0], frame.shape[1]))
@@ -136,12 +161,12 @@ class PlayerDectector():
 		backgrd_mask = (diff_red + diff_green).astype(np.uint8)
 		# print "can print",backgrd_mask
 		_,foreground = cv2.threshold(backgrd_mask, self.BACKGRD_THRESHOLD, 255, cv2.THRESH_BINARY) # to get a rough binary image of the foreground
-		cv2.imwrite("Contours\\backgrdmask\\backgrd mask " + str(j) + ".jpg", foreground)
+		# cv2.imwrite("Contours\\backgrdmask\\backgrd mask " + str(j) + ".jpg", foreground)
 		# cv2.imwrite("Contours\\backgrdmask\\backgrd mask filtered " + str(j) + ".jpg", cv2.medianBlur(foreground,5))
 		blur_image = cv2.GaussianBlur(foreground,(5,5),0) #to smoothen the noise of the foreground
 		_,new_foreground = cv2.threshold(blur_image, self.BACKGRD_THRESHOLD, 255, cv2.THRESH_BINARY) # to connect more points of the player
 		remove_ring = cv2.medianBlur(new_foreground, 7) # remove the middle ring of the field
-		cv2.imwrite("Contours\\backgrdmask\\backgrd mask filtered " + str(j) + ".jpg",remove_ring)
+		# cv2.imwrite("Contours\\backgrdmask\\backgrd mask filtered " + str(j) + ".jpg",remove_ring)
 		three_chan_fore = np.dstack((remove_ring,remove_ring,remove_ring))
 		colour_foregrd = cv2.bitwise_and(three_chan_fore, frame)
 		return colour_foregrd
@@ -150,12 +175,25 @@ class PlayerDectector():
 		for coordinate in coordinates:
 			coordinate = (coordinate[1], coordinate[0])
 			cv2.circle(frame, coordinate, 3,self.ICON_COLOUR[colour] ,-1)
-			print "drawing circles"
 		return frame
 
 	def distance(self, p0, p1):
 	    return math.sqrt((p0[0] - p1[0])**2 + (p0[1] - p1[1])**2)
 
+	#This function takes in a set of contours and a coordinate of the player, and returns the closest coordinate point that is on the contour.
+	#it returns a coordinate and the contour that the coordinate belongs to
+	def closestCoordinate(self, coordinate, contour_set):
+		min_dist_contour = self.BIG_NUMBER
+		min_coor_contour = (-1,-1)
+		contour_found = [[[]]]
+		for cnt in contour_set:
+			for coor in cnt:
+				dist = self.distance(tuple(reversed(coor[0])), coordinate)
+				if dist < min_dist_contour and dist < self.MAX_PIXEL_MOVED:
+					min_dist_contour = dist
+					min_coor_contour = tuple(reversed(coor[0]))
+					contour_found = cnt
+		return min_coor_contour, contour_found
 	def detectPlayers(self, frame, j):
 		contoured_frame = np.copy(frame)
 		# frame = self.adjustGamma(frame, self.GAMMA)
@@ -164,86 +202,87 @@ class PlayerDectector():
 
 		#------------------------------------------------Do background Subtraction---------------------------------------------------
 		foregrd_coloured = self.backgroundSubtraction(frame, self.backgrd_red, self.backgrd_blue, self.backgrd_green, j)
-		cv2.imwrite("Contours\\removebgrd\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
+		# cv2.imwrite("Contours\\removebgrd\detect " + "after bgs" + "frame "+ str(j)+ ".jpg",foregrd_coloured)
 
 		#------------------------------------------------detect White Players---------------------------------------------------------- 
 		white_player_detected = self.detectColour(foregrd_coloured, "White", self.THRESHOLD["White"])
-		cv2.imwrite("Contours\White\detect " + "White" + "frame "+ str(j)+ ".jpg",white_player_detected)
+		# cv2.imwrite("Contours\White\detect " + "White" + "frame "+ str(j)+ ".jpg",white_player_detected)
 		contours, hierarchy = cv2.findContours(white_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_white,_,white_coordinates = self.drawPlayerOutline(np.copy(contoured_frame), contours,"White")
-		cv2.imwrite("Contours\White\Contoured White Players frame "+ str(j)+ ".jpg",contoured_frame_white)
-
-		min_coor = self.red_goalie_position
-		min_dist = 100000000000000
-		for coordinate in white_coordinates:
-			dist = self.distance(coordinate, self.red_goalie_position)
-			# print "coordinate checking is " ,
-			# print coordinate
-			# print "my red is at ",
-			# print self.red_goalie_position
-			# print "dist is " + str(dist)
-			if dist < min_dist and dist < self.MAX_PIXEL_MOVED:
-				min_dist = dist
-				min_coor = coordinate
-		self.red_goalie_position = (min_coor[0] + self.WHITE_OFFSET, min_coor[1])
+		# cv2.imwrite("Contours\White\Contoured White Players frame "+ str(j)+ ".jpg",contoured_frame_white)
+		
+		self.red_goalie_position,_ = self.closestCoordinate(self.red_goalie_position, contours)
+		real_position = (self.red_goalie_position[0] + self.WHITE_OFFSET, self.red_goalie_position[1])
 		# print self.red_goalie_position
-		icon_frame = self.drawPlayersPosition(frame, [self.red_goalie_position], "Red")
-		cv2.imwrite("PlayerPosition\White\White Players frame "+ str(j)+ ".jpg",icon_frame)
+		icon_frame = self.drawPlayersPosition(frame, [real_position], "Red")
+		# cv2.imwrite("PlayerPosition\White\White Players frame "+ str(j)+ ".jpg",icon_frame)
 
 		#------------------------------------------------detect Red Players----------------------------------------------------------
 		red_player_detected = self.detectColour(foregrd_coloured, "Red", self.THRESHOLD["Red"])
-		cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
+		# cv2.imwrite("Contours\Red\detect " + "red" + "frame "+ str(j)+ ".jpg",red_player_detected)
 		contours, hierarchy = cv2.findContours(red_player_detected.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+		# contours_constant = np.copy(contours)
 		contoured_frame_red, blue_players_limbs, red_coordinates = self.drawPlayerOutline(np.copy(contoured_frame), contours,"Red")
 		cv2.imwrite("Contours\Red\Contoured Red Players frame "+ str(j)+ ".jpg",contoured_frame_red)
 		new_red_position = []
+		# new_red_contour = []
+		# miss_players_teammate=[]
+		#find new position of red players using the contours from the new frame
 		for position in self.red_position:
-			min_dist = 1000000000
-			min_pos = position
-			# print "checking ", position
-			for coordinate in red_coordinates:
-				# print "coordinate found ", coordinate ,
-				dist = self.distance(position, coordinate)
-				# print "Distance is ", dist 
-				if dist < min_dist and dist < self.MAX_PIXEL_MOVED:
-					# print "Went into the if"
-					min_dist = dist
-					min_pos = coordinate
-			if min_dist == 1000000000:
-				new_red_position.append((-1,-1)) ##not found
-				#do checking for overlap or missing contour feature
-				#do a function that returns either the old coordinate or an estimated overlapped coordinate from the contour
-				#@ para: current point, contours, 
-				#	first we check if the current point is near to any point, 
-				# 		if he is, then we look through the contour to find his best friend's btn corne, 
-				#			find the 3 other points, check which one is the nearest to him, return that
-				#	else we say his contour feature disappear, we let the old one take over 
+			new_position,contour_found = self.closestCoordinate(position, contours) # to find one coordinate from all contours that is the closest to previous position
+			# print "before missing stuff"
+			if new_position == (-1,-1):
+				index_of_player =  self.red_position.index(position)
+				# index_of_nearby_teammate = self.red_nearby[index_of_player]
+				# if index_of_nearby_teammate == -1: #means player is missing it's contour
+				new_red_position.append(position)
+					# new_red_contour.append([[[-1,-1]]])
+				print "missing contour " + str(index_of_player)
+				# else : #is overlap, then it's position will be calculated after we get the position for all those who didnt overlap 
+				# 	miss_players_teammate.append((index_of_player, index_of_nearby_teammate))
+				# 	new_red_position.append((-1,-1))
+				# 	new_red_contour.append([[[-1,-1]]])
+				# 	print "overlap for " + str(index_of_player)
 			else :
-				red_coordinates.remove(min_pos)
-				new_red_position.append(min_pos)
+				# print type(contours)
+				# print "---------------------------------------------------------"
+				# print contour_found.shape
+				# contours.remove(contour_found)
+				new_red_position.append(new_position)
+				# new_red_contour.append(contour_found)
+		# if len(miss_players_teammate) > 0:
+		# 	print "going into the overlap check"
+		# 	for missing_pair in miss_players_teammate :
+		# 		my_coor_index = missing_pair[0]
+		# 		teammate_index = missing_pair[1]
+		# 		my_old_coor = self.red_position[my_coor_index]
+		# 		teammate_contour = new_red_contour[teammate_index]
+		# 		new_coor = self.closestCoordinate(my_old_coor, [teammate_contour])
+		# 		new_red_position[my_coor_index] = new_coor
+					
 		self.red_position = new_red_position
-		# calculate the nearby array here----------------------------------------------------------------------------------
+		# self.red_nearby = self.nearbyPlayer(self.red_position)
 		# print self.red_position
-		icon_frame_2 = self.drawPlayersPosition(icon_frame, self.red_position, "Blue")
+		icon_frame_2 = self.drawPlayersPosition(icon_frame, self.red_position, "Blue") #printing blue on red player becos we cant see red on red
 		cv2.imwrite("PlayerPosition\Red\Red Players frame "+ str(j)+ ".jpg",icon_frame_2)
 
 		#------------------------------------------------detect Blue Players----------------------------------------------------------
 		player_detected = self.detectColour(foregrd_coloured, "Blue", self.THRESHOLD["Blue"])
-		cv2.imwrite("Contours\Blue\player dected" + str(j) + ".jpg", player_detected)
+		# cv2.imwrite("Contours\Blue\player dected" + str(j) + ".jpg", player_detected)
 		full_blue_player = player_detected.astype(int) + blue_players_limbs.astype(int)
 		masked_wanted_points = np.ma.masked_where(full_blue_player!=0, full_blue_player)
 		noisy_full_blue_player = np.ma.filled(masked_wanted_points,255)
-		cv2.imwrite("Contours\Blue\\full blue"+ str(j)+ ".jpg",noisy_full_blue_player)
+		# cv2.imwrite("Contours\Blue\\full blue"+ str(j)+ ".jpg",noisy_full_blue_player)
 		#connect the white dots of the player
 		gaus_blue_player = cv2.GaussianBlur(noisy_full_blue_player.astype(np.uint8), (5,5), 0)
 		_,final_full_blue_player = cv2.threshold(gaus_blue_player, 20, 255, cv2.THRESH_BINARY) # to connect more points of the player
 		median_blue_player = cv2.medianBlur(final_full_blue_player, 7) 
-		cv2.imwrite("Contours\Blue\\full blue with connectivity"+ str(j)+ ".jpg",median_blue_player)
+		# cv2.imwrite("Contours\Blue\\full blue with connectivity"+ str(j)+ ".jpg",median_blue_player)
 		
 
 		contours, hierarchy = cv2.findContours(median_blue_player.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_blue,_,blue_coordinate = self.drawPlayerOutline(np.copy(contoured_frame), contours, "Blue")
-		cv2.imwrite("Contours\Blue\Contoured Blue Players frame "+ str(j)+ ".jpg",contoured_frame_blue)
+		# cv2.imwrite("Contours\Blue\Contoured Blue Players frame "+ str(j)+ ".jpg",contoured_frame_blue)
 
 		#------------------------------------------------detect Green Players----------------------------------------------------------
 		both_teams_detected = (red_player_detected + median_blue_player).astype(np.uint8)
@@ -254,7 +293,7 @@ class PlayerDectector():
 		green_channel = self.detectColour(green_players, "Green", self.THRESHOLD["Green"])
 		contours, hierarchy = cv2.findContours(green_channel.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 		contoured_frame_green,_,green_coordinate = self.drawPlayerOutline(contoured_frame, contours, "Green")
-		cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
+		# cv2.imwrite("Contours\Green\Contoured Green Players frame " + str(j)+".jpg", contoured_frame_green)
 
 	def connectDots(self, frame):
 		gaus_blur = cv2.GaussianBlur(frame.astype(np.uint8), (5,5), 0)
@@ -296,8 +335,10 @@ class PlayerDectector():
 	# 	return cv2.LUT(image, table)
 # DEBUG = 0
 if DEBUG :
+
 	detect_player = PlayerDectector(cv2.imread("backgrd.png"))
-	for j in range(0, 7000):
+	# print detect_player.distance(detect_player.blue_position[4], detect_player.blue_position[3])
+	for j in range(74, 7000):
 		print "running frame " + str(j)
 		frame = cv2.imread("C:\Users\weijian\Desktop\FullSize\panorama_frame_ " + str(j) +".jpg")
 		detect_player.detectPlayers(frame, j)
