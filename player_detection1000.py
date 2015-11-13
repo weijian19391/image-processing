@@ -9,7 +9,7 @@ import time
 DEBUG = 1
 
 WHITE_OFFSET = 25 
-BLUE_GOLIE_OFFSET = 15 
+BLUE_GOLIE_OFFSET = 18
 REFEREE_OFFSET = 30
 BLUE_PLAYER_OFFSET = 30
 RED_PLAYER_OFFSET = 30
@@ -25,11 +25,7 @@ class PlayerDectector():
 	# GAMMA = 1
 	BACKGRD_THRESHOLD = 20
 	BLUE_THRESHOLD = 20
-	#to offset the y coordinate of the white goal keeper
 	#BLUE_GOLIE_OFFSET = 20 #some parts went off previously hence we are assigning a smaller value now 
-	
-	
-	
 	MAX_PIXEL_MOVED = 80
 	BIG_NUMBER = 100000000
 	def __init__(self, backgrd_image, red_pos, red_goalie_post, blue_pos, blue_golie_pos, referee_pos):
@@ -50,6 +46,9 @@ class PlayerDectector():
 
 		self.red_directionchange = [[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]]
 		self.blue_directionchange = [[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]]
+
+		self.red_previous_position_from_contour = [-1,-1,-1,-1,-1,-1,-1,-1]
+		self.blue_previous_position_from_contour =[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]
 	"""
 	 this function takes in a color image frame, detects the colour to be detected, and return a black and white image whereby white parts are where the color is found
 	 color detection is based on the threshold, and whether the color channel is the max among the rest of the channel so as to detect more color gradient
@@ -232,6 +231,7 @@ class PlayerDectector():
 					new_red_position.append(new_position)
 					self.red_old_centroid_overlap[index_of_player] = (-1,-1)
 					print "missing red contour " + str(index_of_player)
+					self.red_previous_position_from_contour[index_of_player] = 0
 					centroid_assigned = True
 				else :
 					#check if the new centroid is near enough to the old centroid 
@@ -242,17 +242,17 @@ class PlayerDectector():
 						if this_centroid == new_position:
 							index_of_contour_found = i
 							break
-					print new_position
-					print self.red_position[index_of_player]
 					if self.distance(new_position, self.red_position[index_of_player]) < 30:
 						#check if contour is used, case for overlap 
 						if contour_used[index_of_contour_found] == -1: #means is not used by someone else yet
 							new_red_position.append(new_position)
 							self.red_old_centroid_overlap[index_of_player] = (-1,-1)
 							#udate the direction change when we got confirmed new position
-							self.red_directionchange[index_of_player][0] = new_position[0] - self.red_position[index_of_player][0]
-							self.red_directionchange[index_of_player][0] = new_position[0] - self.red_position[index_of_player][0]
+							if self.red_previous_position_from_contour[index_of_player] == 1:
+								self.red_directionchange[index_of_player][0] = new_position[0] - self.red_position[index_of_player][0]
+								self.red_directionchange[index_of_player][0] = new_position[0] - self.red_position[index_of_player][0]
 							centroid_assigned = True
+							self.red_previous_position_from_contour[index_of_player] = 1
 							contour_used[index_of_contour_found] = index_of_player
 							# print "found normally red player"+ str(index_of_player)
 						else: #means contour alr taken by someone else
@@ -271,6 +271,7 @@ class PlayerDectector():
 							#settle my new position based on some offset to my previous position
 							new_red_position.append((my_old_position[0] + overlap_centroid_offset[0],my_old_position[1]+overlap_centroid_offset[1]))
 							centroid_assigned = True
+							self.red_previous_position_from_contour[index_of_player] = 1
 							#set that these indexes of players uses the overlapped contour
 							self.red_old_centroid_overlap[index_of_player] = new_position
 							self.red_old_centroid_overlap[contour_used[index_of_contour_found]] = new_position
@@ -312,6 +313,8 @@ class PlayerDectector():
 		for position in self.blue_position:
 			index_of_player =  self.blue_position.index(position)
 			centroid_assigned = False
+			if index_of_player == 2:
+				print self.blue_directionchange[2]
 			contour_to_check = np.copy(contours_found_blue)
 			#first find a contour that matches 
 			while not centroid_assigned:
@@ -322,7 +325,7 @@ class PlayerDectector():
 				if new_position == (-1,-1):
 					new_position = (position[0] + self.blue_directionchange[index_of_player][0], position[1] + self.blue_directionchange[index_of_player][1])
 					new_blue_position.append(new_position)
-					# new_red_centroid.append(self.red_centroid[index_of_player]) # assign back the same centroid
+					self.blue_previous_position_from_contour[index_of_player] = 0
 					self.blue_old_centroid_overlap[index_of_player] = (-1,-1)
 					print "missing blue contour " + str(index_of_player)
 					centroid_assigned = True
@@ -342,9 +345,11 @@ class PlayerDectector():
 						if contour_used[index_of_contour_found] == -1: #means is not used by someone else yet
 							new_blue_position.append(new_position)
 							self.blue_old_centroid_overlap[index_of_player] = (-1,-1)
-							self.blue_directionchange[index_of_player][0] = new_position[0] - self.blue_position[index_of_player][0]
-							self.blue_directionchange[index_of_player][0] = new_position[0] - self.blue_position[index_of_player][0]
+							if self.blue_previous_position_from_contour[index_of_player] == 1:
+								self.blue_directionchange[index_of_player][0] = new_position[0] - self.blue_position[index_of_player][0]
+								self.blue_directionchange[index_of_player][0] = new_position[0] - self.blue_position[index_of_player][0]
 							centroid_assigned = True
+							self.blue_previous_position_from_contour[index_of_player] = 1
 							contour_used[index_of_contour_found] = index_of_player
 							# print "found normally blue player"+ str(index_of_player)
 						else: #means contour alr taken by someone else
@@ -362,6 +367,7 @@ class PlayerDectector():
 							#settle my new position based on some offset to my previous position
 							new_blue_position.append((my_old_position[0] + overlap_centroid_offset[0],my_old_position[1]+overlap_centroid_offset[1]))
 							centroid_assigned = True
+							self.blue_previous_position_from_contour[index_of_player] = 1
 							#set that these indexes of players uses the overlapped contour
 							self.blue_old_centroid_overlap[index_of_player] = new_position
 							self.blue_old_centroid_overlap[contour_used[index_of_contour_found]] = new_position
@@ -370,6 +376,8 @@ class PlayerDectector():
 						print "found a contour but not what i want, blue player "+ str(index_of_player)
 						print new_position, self.blue_position[index_of_player]
 						contour_to_check = np.delete(contour_to_check,index_of_contour_found,0)
+			if index_of_player == 2:
+				print self.blue_directionchange[2]	
 		self.blue_position = new_blue_position
 		real_blue_position = np.add(np.array(self.blue_position),[BLUE_PLAYER_OFFSET,0])
 		icon_frame_3 = self.drawPlayersPosition(icon_frame_2, self.blue_position,"Green" ) #printing blue on red player becos we cant see red on red
@@ -413,6 +421,7 @@ class PlayerDectector():
 			cv2.imwrite("PlayerPosition\Referee\Referee frame "+ str(j)+ ".jpg",icon_frame_5)
 		# print "Time taken to get green player position " + str(time.clock() - t0)
 		return real_red_position , self.red_goalie_position, real_blue_position, self.blue_golie_postion, self.referee_position
+		red_position, red_goalie_position, blue_position, blue_golie_postion, referee_position
 
 	def connectDots(self, frame):
 		gaus_blur = cv2.GaussianBlur(frame.astype(np.uint8), (5,5), 0)
@@ -423,7 +432,7 @@ class PlayerDectector():
 
 # DEBUG = 0
 if DEBUG :
-	startFrame = 200
+	startFrame = 1000
 	if startFrame == 0:
 		#--------------------------------------frame 0 -------------------------------------------------------------------------------------------------
 		red_position = [(348, 4683), (250, 4822), (294, 5088), (351, 5165), (538, 5234), (301, 5345), (256, 5418), (464, 6042)]#position for frame 0
@@ -433,7 +442,7 @@ if DEBUG :
 		referee_position = (340,5231)
 		open('playersCoordinate.txt', 'w').close()
 	else:
-		fo = open('playersCoordinate200.txt', 'r')
+		fo = open('playersCoordinate1000.txt', 'r')
 		# fo.seek(0, 2)
 		lines = fo.readlines()
 		line = ast.literal_eval(lines[len(lines)-1])
@@ -442,13 +451,13 @@ if DEBUG :
 		red_golie = (line["red golie"][0]-WHITE_OFFSET,line["red golie"][1])
 
 		blue_position = np.subtract(line["blue position"], [BLUE_PLAYER_OFFSET ,0]).tolist()
-		blue_goalie = (line["blue goalie"][0]-BLUE_GOLIE_OFFSET,line["red golie"][1])
+		blue_goalie = (line["blue goalie"][0]-BLUE_GOLIE_OFFSET,line["blue goalie"][1])
 
 		referee_position = (line["referee"][0]-REFEREE_OFFSET,line["referee"][1])
 		
 	detect_player = PlayerDectector(cv2.imread("backgrd.png"), red_position, red_golie, blue_position, blue_goalie, referee_position)
 	
-	for j in range(startFrame, 399):
+	for j in range(startFrame, 1999):
 		
 		print "running frame " + str(j)
 		frame = cv2.imread("C:\Users\weijian\Desktop\FullSize\panorama_frame_ " + str(j) +".jpg")
@@ -461,7 +470,7 @@ if DEBUG :
 
 		coordinate = {"red position ":red_position.tolist(), "red golie":red_goalie_position, "blue position":blue_position.tolist(), "blue goalie":blue_golie_postion, "referee":referee_position}
 		# print coordinate
-		fo = open("playersCoordinate200.txt", "r+")
+		fo = open("playersCoordinate1000.txt", "r+")
 		fo.seek(0, 2)
 		line = fo.write('\n' + str(coordinate))
 		fo.close()

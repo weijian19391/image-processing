@@ -432,7 +432,7 @@ class PlayerDectector():
 
 # DEBUG = 0
 if DEBUG :
-	startFrame = 120
+	startFrame = 500
 	if startFrame == 0:
 		#--------------------------------------frame 0 -------------------------------------------------------------------------------------------------
 		red_position = [(348, 4683), (250, 4822), (294, 5088), (351, 5165), (538, 5234), (301, 5345), (256, 5418), (464, 6042)]#position for frame 0
@@ -457,7 +457,7 @@ if DEBUG :
 		
 	detect_player = PlayerDectector(cv2.imread("backgrd.png"), red_position, red_golie, blue_position, blue_goalie, referee_position)
 	
-	for j in range(startFrame, 500):
+	for j in range(startFrame, 1000):
 		
 		print "running frame " + str(j)
 		frame = cv2.imread("C:\Users\weijian\Desktop\FullSize\panorama_frame_ " + str(j) +".jpg")
